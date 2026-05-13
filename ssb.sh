@@ -129,6 +129,12 @@ parse_args() {
 # =============================================================================
 
 check_prerequisites() {
+    # Require Bash 4.0+ for lowercase expansion (${var,,}) and other features
+    if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+        echo "ERROR: ssb.sh requires Bash 4.0 or later (running ${BASH_VERSION})." >&2
+        exit 1
+    fi
+
     local missing=0
     for cmd in docker rsync curl; do
         if ! command -v "${cmd}" &>/dev/null; then
@@ -170,10 +176,14 @@ acquire_lock() {
         exit 1
     fi
 
-    # Stale lock — reclaim it
+    # Stale lock — reclaim it atomically to avoid a race condition between
+    # two processes that both detect the stale lock at the same time
     log_warn "Stale lock file found (PID ${existing_pid} is not running). Removing and re-locking."
     rm -f "${LOCK_FILE}"
-    echo $$ > "${LOCK_FILE}"
+    if ! ( set -C; echo $$ > "${LOCK_FILE}" ) 2>/dev/null; then
+        echo "ERROR: Another process acquired the lock during stale-lock recovery. Exiting." >&2
+        exit 1
+    fi
     log_info "Lock acquired: ${LOCK_FILE}"
 }
 
@@ -310,7 +320,7 @@ backup_mysql() {
             if ! docker exec \
                 -e "MYSQL_PWD=${mysql_pass}" \
                 "${container}" \
-                mysqldump -u "${mysql_user}" --single-transaction --quick -- "${db}" \
+                mysqldump -u "${mysql_user}" --single-transaction --quick "${db}" \
                 > "${out_file}"; then
                 rm -f "${out_file}"
                 log_error "  mysqldump failed for database '${db}' in container '${container}'"
