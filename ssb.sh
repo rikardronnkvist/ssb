@@ -652,21 +652,18 @@ backup_gluster() {
 # =============================================================================
 
 cleanup_old_backups() {
+    # Per-host backup retention
     local host_root="${BACKUP_BASE}/${SHORT_HOSTNAME}"
-
-    # Compute cutoff date (GNU date; falls back to BSD date on macOS)
     local cutoff_date
     cutoff_date=$(date -d "${RETENTION_DAYS} days ago" +%Y-%m-%d 2>/dev/null) \
         || cutoff_date=$(date -v "-${RETENTION_DAYS}d" +%Y-%m-%d 2>/dev/null) \
         || { log_warn "Could not compute retention cutoff — skipping cleanup."; return 0; }
 
-    log_info "Retention: removing per-host backups before ${cutoff_date} (>${RETENTION_DAYS} days) in ${host_root}"
-
+    log_info "Retention: removing per-host backups before ${cutoff_date} (>"${RETENTION_DAYS}" days) in ${host_root}"
     local found=0
     local dir dir_date
     while IFS= read -r dir; do
         dir_date=$(basename "${dir}")
-        # ISO date string comparison is lexicographically correct
         if [[ "${dir_date}" < "${cutoff_date}" ]]; then
             found=$((found + 1))
             if [[ "${DRY_RUN}" == "true" ]]; then
@@ -677,8 +674,27 @@ cleanup_old_backups() {
             fi
         fi
     done < <(find "${host_root}" -maxdepth 1 -mindepth 1 -type d -name "????-??-??" 2>/dev/null || true)
-
     [[ "${found}" -eq 0 ]] && log_info "  No old backups to remove."
+
+    # GlusterFS backup retention (only on designated node)
+    if [[ "${BACKUP_GLUSTER}" == "true" ]]; then
+        local gluster_root="${BACKUP_BASE}/${GLUSTER_DEST_NAME}"
+        log_info "Retention: removing GlusterFS backups before ${cutoff_date} (>"${RETENTION_DAYS}" days) in ${gluster_root}"
+        local gfound=0
+        while IFS= read -r dir; do
+            dir_date=$(basename "${dir}")
+            if [[ "${dir_date}" < "${cutoff_date}" ]]; then
+                gfound=$((gfound + 1))
+                if [[ "${DRY_RUN}" == "true" ]]; then
+                    log_info "[DRY-RUN] Would remove: ${dir}"
+                else
+                    log_info "  Removing: ${dir}"
+                    rm -rf "${dir}"
+                fi
+            fi
+        done < <(find "${gluster_root}" -maxdepth 1 -mindepth 1 -type d -name "????-??-??" 2>/dev/null || true)
+        [[ "${gfound}" -eq 0 ]] && log_info "  No old GlusterFS backups to remove."
+    fi
 }
 
 # =============================================================================
