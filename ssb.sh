@@ -12,7 +12,7 @@ set -uo pipefail
 
 # =============================================================================
 # CONFIGURATION DEFAULTS
-# These defaults can be overridden by sourcing a config file.
+# These defaults can be overridden by values loaded from a JSON config file.
 # =============================================================================
 
 
@@ -57,7 +57,7 @@ SCRIPT_PATH="${BASH_SOURCE[0]}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${SCRIPT_PATH}")" && pwd)
 readonly SCRIPT_DIR
 
-DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/ssb.conf"
+DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/ssb.json"
 CONFIG_FILE="${DEFAULT_CONFIG_FILE}"
 CONFIG_FILE_FROM_ARG="false"
 
@@ -66,6 +66,9 @@ readonly DATE
 
 SHORT_HOSTNAME=$(hostname -s)
 readonly SHORT_HOSTNAME
+
+FULL_HOSTNAME=$(hostname)
+readonly FULL_HOSTNAME
 
 HOST_BACKUP_DIR=""
 LOCK_FILE=""
@@ -109,7 +112,7 @@ Usage: $(basename "$0") [OPTIONS]
 Simple Swarm Backup — backs up local Docker volumes and databases on this node.
 
 Options:
-    --config FILE  Load config FILE from the script directory (default: ssb.conf)
+    --config FILE  Load JSON config FILE from the script directory (default: ssb.json)
   --dry-run    Show what would be done without writing any files
   --help       Show this help message
 
@@ -170,16 +173,85 @@ parse_args() {
 }
 
 load_config() {
-    if [[ -f "${CONFIG_FILE}" ]]; then
-        # shellcheck disable=SC1090
-        source "${CONFIG_FILE}"
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        if [[ "${CONFIG_FILE_FROM_ARG}" == "true" ]]; then
+            echo "ERROR: Config file not found: ${CONFIG_FILE}" >&2
+            exit 2
+        fi
         return 0
     fi
 
-    if [[ "${CONFIG_FILE_FROM_ARG}" == "true" ]]; then
-        echo "ERROR: Config file not found: ${CONFIG_FILE}" >&2
+    if ! command -v jq &>/dev/null; then
+        echo "ERROR: jq is required to parse JSON config files." >&2
         exit 2
     fi
+
+    if ! jq -e . "${CONFIG_FILE}" >/dev/null 2>&1; then
+        echo "ERROR: Invalid JSON in config file: ${CONFIG_FILE}" >&2
+        exit 2
+    fi
+
+    local server_cfg
+    server_cfg=$(jq -c \
+        --arg short "${SHORT_HOSTNAME}" \
+        --arg full "${FULL_HOSTNAME}" \
+        '(.default // {}) + ((.servers // {})[$short] // (.servers // {})[$full] // {})' \
+        "${CONFIG_FILE}")
+
+    local value
+
+    value=$(jq -r 'if has("backup_base") then .backup_base else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && BACKUP_BASE="${value}"
+
+    value=$(jq -r 'if has("retention_days") then .retention_days|tostring else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && RETENTION_DAYS="${value}"
+
+    value=$(jq -r 'if has("existing_backup_action") then .existing_backup_action else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && EXISTING_BACKUP_ACTION="${value}"
+
+    value=$(jq -r 'if has("healthcheck_url") then .healthcheck_url else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && HEALTHCHECK_URL="${value}"
+
+    value=$(jq -r 'if has("docker_src") then .docker_src else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && DOCKER_SRC="${value}"
+
+        mapfile -t DOCKER_EXCLUDE_DIRS < <(
+                jq -r \
+                        --arg short "${SHORT_HOSTNAME}" \
+                        --arg full "${FULL_HOSTNAME}" \
+                        '
+                        def as_array: if type == "array" then . else [] end;
+                        (
+                            ((.default // {}).docker_exclude_dirs // []) | as_array
+                        )
+                        +
+                        (
+                            ((((.servers // {})[$short] // (.servers // {})[$full] // {}).docker_exclude_dirs) // []) | as_array
+                        )
+                        | .[]
+                        | tostring
+                        ' \
+                        "${CONFIG_FILE}"
+        )
+
+    value=$(jq -r 'if has("backup_gluster") then .backup_gluster|tostring else empty end' <<< "${server_cfg}")
+    if [[ -n "${value}" ]]; then
+        value="${value,,}"
+        if [[ "${value}" == "true" || "${value}" == "false" ]]; then
+            BACKUP_GLUSTER="${value}"
+        else
+            echo "ERROR: backup_gluster must be true or false in ${CONFIG_FILE}" >&2
+            exit 2
+        fi
+    fi
+
+    value=$(jq -r 'if has("gluster_dest_name") then .gluster_dest_name else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && GLUSTER_DEST_NAME="${value}"
+
+    value=$(jq -r 'if has("gluster_src") then .gluster_src else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && GLUSTER_SRC="${value}"
+
+    mapfile -t GLUSTER_EXCLUDE_DIRS < <(jq -r '(.gluster_exclude_dirs // [])[] | tostring' <<< "${server_cfg}")
 }
 
 set_runtime_paths() {
@@ -203,7 +275,7 @@ check_prerequisites() {
     fi
 
     local missing=0
-    for cmd in docker rsync curl; do
+    for cmd in docker rsync curl jq gzip; do
         if ! command -v "${cmd}" &>/dev/null; then
             log_warn "Command not found: ${cmd}"
             missing=$((missing + 1))

@@ -1,3 +1,5 @@
 # Local SSB runtime configs (kept next to ssb.sh)
 ssb.conf
 ssb.*.conf
+ssb.json
+ssb.*.json

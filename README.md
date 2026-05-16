@@ -12,10 +12,10 @@ on every node via cron — no central scheduler, no shared state.
 - **Database backup** — performs logical dumps inside containers via `docker exec`
   - MySQL / MariaDB (`mysqldump`)
   - PostgreSQL (`pg_dump` / `pg_dumpall`)
+- **Compressed DB dumps** — dumps are written locally, gzipped, then copied to NFS
 - **Label-driven** — opt containers in with a single Docker label
 - **GlusterFS backup** — optional, enabled on exactly one node
-- **Retention** — automatically removes dated backup directories older than N days
-  - (per-host) and GlusterFS backup directories older than N days (only on the designated GlusterFS node)
+- **Retention** — automatically removes old dated per-host backups and old GlusterFS dated backups (on the designated GlusterFS node)
 - **Lock file** — prevents overlapping cron runs; detects and recovers stale locks
 - **Healthcheck** — sends a curl ping on fully successful completion
 - **Dry-run mode** — shows what would happen without writing any files
@@ -30,10 +30,10 @@ on every node via cron — no central scheduler, no shared state.
 sudo cp ssb.sh /usr/local/sbin/ssb.sh
 sudo chmod +x /usr/local/sbin/ssb.sh
 
-# 2. Create a local config file next to the script
+# 2. Create a local JSON config file next to the script
 cd /usr/local/sbin
-sudo cp ssb.conf.example ssb.conf
-sudo nano ssb.conf
+sudo cp ssb.json.example ssb.json
+sudo nano ssb.json
 
 # 3. Test with --dry-run
 /usr/local/sbin/ssb.sh --dry-run
@@ -47,11 +47,12 @@ echo "0 2 * * * /usr/local/sbin/ssb.sh >> /var/log/ssb.log 2>&1" \
 
 ## Configuration
 
-`ssb.sh` loads configuration from a file in the same directory as the script.
+`ssb.sh` loads configuration from a JSON file in the same directory as the script.
 
-- Default config file: `ssb.conf`
-- Optional per-server configs: `ssb.<server>.conf`
-- Select a specific config with `--config <filename>`
+- Default config file: `ssb.json`
+- Optional config file name via `--config <filename>`
+- Define multiple servers in one JSON file under `servers`
+- The script selects config by hostname (`hostname -s`; fallback to full hostname)
 
 Local config files are ignored by git via `.gitignore`, so they are not
 affected by pull/push.
@@ -59,27 +60,55 @@ affected by pull/push.
 ### Example
 
 ```bash
-# Uses ./ssb.conf (if present)
+# Uses ./ssb.json (if present)
 ./ssb.sh --dry-run
 
-# Uses ./ssb.docker01.conf
-./ssb.sh --config ssb.docker01.conf --dry-run
+# Uses ./ssb.prod.json
+./ssb.sh --config ssb.prod.json --dry-run
 ```
 
-Available variables in config files:
+### JSON config structure
+
+Use `default` for shared settings and `servers.<hostname>` for host-specific overrides.
+
+For `docker_exclude_dirs`, values are merged: the effective list is `default.docker_exclude_dirs` plus `servers.<hostname>.docker_exclude_dirs`.
+
+```json
+{
+  "default": {
+    "backup_base": "/mnt/nas01backup",
+    "retention_days": 5,
+    "existing_backup_action": "overwrite",
+    "healthcheck_url": "",
+    "docker_src": "/srv/docker",
+    "docker_exclude_dirs": ["service-a/tmp"],
+    "backup_gluster": false,
+    "gluster_dest_name": "gluster01",
+    "gluster_src": "/mnt/gluster01",
+    "gluster_exclude_dirs": ["shared/tmp"]
+  },
+  "servers": {
+    "docker01": {
+      "backup_gluster": true
+    }
+  }
+}
+```
+
+Available variables in JSON config (`default` and server overrides):
 
 | Variable | Default | Description |
 |---|---|---|
-| `BACKUP_BASE` | `/mnt/nas01backup` | Root of the NFS backup target |
-| `RETENTION_DAYS` | `5` | Days to keep per-host dated directories |
-| `EXISTING_BACKUP_ACTION` | `"overwrite"` | `"overwrite"` or `"keep"` when today's backup already exists |
-| `HEALTHCHECK_URL` | `""` | URL to curl on success (e.g. `https://hc-ping.com/<uuid>`) |
-| `DOCKER_SRC` | `/srv/docker` | Docker volume source directory |
-| `DOCKER_EXCLUDE_DIRS` | `()` | Paths relative to `DOCKER_SRC` to exclude from rsync |
-| `BACKUP_GLUSTER` | `"false"` | Set to `"true"` on the one node responsible for GlusterFS |
-| `GLUSTER_DEST_NAME` | `"gluster01"` | Output folder name under `BACKUP_BASE` for GlusterFS |
-| `GLUSTER_SRC` | `/mnt/gluster01` | GlusterFS source directory |
-| `GLUSTER_EXCLUDE_DIRS` | `()` | Paths relative to `GLUSTER_SRC` to exclude from rsync |
+| `backup_base` | `/mnt/nas01backup` | Root of the NFS backup target |
+| `retention_days` | `5` | Days to keep per-host and GlusterFS dated directories |
+| `existing_backup_action` | `"overwrite"` | `"overwrite"` or `"keep"` when today's backup already exists |
+| `healthcheck_url` | `""` | URL to curl on success (e.g. `https://hc-ping.com/<uuid>`) |
+| `docker_src` | `/srv/docker` | Docker volume source directory |
+| `docker_exclude_dirs` | `[]` | Paths relative to `docker_src` to exclude from rsync (merged: default + server list) |
+| `backup_gluster` | `false` | Set to `true` on the one node responsible for GlusterFS |
+| `gluster_dest_name` | `"gluster01"` | Output folder name under `backup_base` for GlusterFS |
+| `gluster_src` | `/mnt/gluster01` | GlusterFS source directory |
+| `gluster_exclude_dirs` | `[]` | Paths relative to `gluster_src` to exclude from rsync |
 
 ---
 
@@ -174,10 +203,10 @@ or configure `pg_hba.conf` for local trust/peer authentication.
         ...
       databases/
         <container-name>/
-          all-databases.sql   ← MySQL: all-databases dump
-          mydb.sql            ← MySQL: single database dump
-          pg_dumpall.sql      ← PostgreSQL: full cluster dump
-          mydb.dump           ← PostgreSQL: single database (custom format)
+          mydb.sql.gz         ← MySQL: single database dump (gzipped)
+          all-databases.sql.gz← MySQL: all-databases dump (gzipped)
+          pg_dumpall.sql.gz   ← PostgreSQL: full cluster dump (gzipped)
+          mydb.dump.gz        ← PostgreSQL: single database (custom format, gzipped)
     backup-YYYY-MM-DD.lock    ← Present only while the script is running
 
   gluster01/                  ← GlusterFS (written by the designated node only)
@@ -223,6 +252,8 @@ writing files, running dumps, or deleting old backups.
 - `docker` CLI (connected to the local Docker Engine)
 - `rsync`
 - `curl` (only if `HEALTHCHECK_URL` is set)
+- `jq` (for JSON config parsing)
+- `gzip` (for compressed database backup files)
 - NFS (or equivalent) mount available at `BACKUP_BASE`
 
 ---

@@ -1,0 +1,32 @@
+{
+  "default": {
+    "backup_base": "/mnt/nas01backup",
+    "retention_days": 5,
+    "existing_backup_action": "overwrite",
+    "healthcheck_url": "",
+    "docker_src": "/srv/docker",
+    "docker_exclude_dirs": [
+      "plex/pms/Cache",
+      "tautulli/cache",
+      "service-a/tmp"
+    ],
+    "backup_gluster": false,
+    "gluster_dest_name": "gluster01",
+    "gluster_src": "/mnt/gluster01",
+    "gluster_exclude_dirs": [
+      "shared/tmp",
+      "shared/cache"
+    ]
+  },
+  "servers": {
+    "docker01": {
+      "backup_gluster": true
+    },
+    "docker02": {
+      "backup_base": "/mnt/nas01backup-alt",
+      "docker_exclude_dirs": [
+        "service-b/tmp"
+      ]
+    }
+  }
+}
