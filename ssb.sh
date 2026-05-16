@@ -409,31 +409,45 @@ backup_mysql() {
             db="${db//[[:space:]]/}"
             [[ -z "${db}" ]] && continue
             log_info "  Dumping database: ${db}"
-            local out_file="${dest_dir}/${db}.sql"
+            local tmp_file
+            tmp_file=$(mktemp "/tmp/ssb-mysql-${container}-${db}-XXXXXX.sql")
+            local zip_file="${dest_dir}/${db}.sql.gz"
             if ! docker exec \
                 -e "MYSQL_PWD=${mysql_pass}" \
                 "${container}" \
                 mysqldump -u "${mysql_user}" --single-transaction --quick "${db}" \
-                > "${out_file}"; then
-                rm -f "${out_file}"
+                > "${tmp_file}"; then
+                rm -f "${tmp_file}"
                 log_error "  mysqldump failed for database '${db}' in container '${container}'"
             else
-                log_info "  Saved: ${out_file}"
+                if gzip -c "${tmp_file}" > "${zip_file}"; then
+                    log_info "  Saved: ${zip_file} (gzipped)"
+                else
+                    log_error "  gzip failed for ${tmp_file}"
+                fi
+                rm -f "${tmp_file}"
             fi
         done
     else
         # Full cluster dump
         log_info "  Dumping all databases"
-        local out_file="${dest_dir}/all-databases.sql"
+        local tmp_file
+        tmp_file=$(mktemp "/tmp/ssb-mysql-${container}-all-XXXXXX.sql")
+        local zip_file="${dest_dir}/all-databases.sql.gz"
         if ! docker exec \
             -e "MYSQL_PWD=${mysql_pass}" \
             "${container}" \
             mysqldump -u "${mysql_user}" --single-transaction --all-databases \
-            > "${out_file}"; then
-            rm -f "${out_file}"
+            > "${tmp_file}"; then
+            rm -f "${tmp_file}"
             log_error "  mysqldump (all-databases) failed for container '${container}'"
         else
-            log_info "  Saved: ${out_file}"
+            if gzip -c "${tmp_file}" > "${zip_file}"; then
+                log_info "  Saved: ${zip_file} (gzipped)"
+            else
+                log_error "  gzip failed for ${tmp_file}"
+            fi
+            rm -f "${tmp_file}"
         fi
     fi
 }
@@ -505,31 +519,45 @@ backup_postgresql() {
             db="${db//[[:space:]]/}"
             [[ -z "${db}" ]] && continue
             log_info "  Dumping database: ${db}"
-            local out_file="${dest_dir}/${db}.dump"
+            local tmp_file
+            tmp_file=$(mktemp "/tmp/ssb-pg-${container}-${db}-XXXXXX.dump")
+            local zip_file="${dest_dir}/${db}.dump.gz"
             if ! docker exec \
                 -e "PGPASSWORD=${pg_pass}" \
                 "${container}" \
                 pg_dump -U "${pg_user}" -Fc "${db}" \
-                > "${out_file}"; then
-                rm -f "${out_file}"
+                > "${tmp_file}"; then
+                rm -f "${tmp_file}"
                 log_error "  pg_dump failed for database '${db}' in container '${container}'"
             else
-                log_info "  Saved: ${out_file}"
+                if gzip -c "${tmp_file}" > "${zip_file}"; then
+                    log_info "  Saved: ${zip_file} (gzipped)"
+                else
+                    log_error "  gzip failed for ${tmp_file}"
+                fi
+                rm -f "${tmp_file}"
             fi
         done
     else
         # Full cluster dump (includes roles, tablespaces, all databases)
         log_info "  Dumping entire PostgreSQL cluster (pg_dumpall)"
-        local out_file="${dest_dir}/pg_dumpall.sql"
+        local tmp_file
+        tmp_file=$(mktemp "/tmp/ssb-pg-${container}-all-XXXXXX.sql")
+        local zip_file="${dest_dir}/pg_dumpall.sql.gz"
         if ! docker exec \
             -e "PGPASSWORD=${pg_pass}" \
             "${container}" \
             pg_dumpall -U "${pg_user}" \
-            > "${out_file}"; then
-            rm -f "${out_file}"
+            > "${tmp_file}"; then
+            rm -f "${tmp_file}"
             log_error "  pg_dumpall failed for container '${container}'"
         else
-            log_info "  Saved: ${out_file}"
+            if gzip -c "${tmp_file}" > "${zip_file}"; then
+                log_info "  Saved: ${zip_file} (gzipped)"
+            else
+                log_error "  gzip failed for ${tmp_file}"
+            fi
+            rm -f "${tmp_file}"
         fi
     fi
 }
