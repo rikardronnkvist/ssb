@@ -15,42 +15,39 @@ set -uo pipefail
 # These defaults can be overridden by sourcing a config file.
 # =============================================================================
 
+
 # Base directory of the (NFS-mounted) backup target
 BACKUP_BASE="/mnt/nas01backup"
+
+# Number of days to retain per-host dated backup directories
+RETENTION_DAYS=5
+
+# What to do when today's backup directory already exists: overwrite|keep
+EXISTING_BACKUP_ACTION="overwrite"
+
+# URL to ping on fully successful backup run (empty disables)
+HEALTHCHECK_URL=""
 
 # Source directory containing Docker bind-mount data
 DOCKER_SRC="/srv/docker"
 
-# GlusterFS source directory (replicated across all Swarm nodes)
-GLUSTER_SRC="/mnt/gluster01"
+# Paths relative to DOCKER_SRC to exclude from rsync
+# Example: DOCKER_EXCLUDE_DIRS=("plex/pms/Cache" "tautulli/cache" "service-a/tmp")
+DOCKER_EXCLUDE_DIRS=()
 
 # Set to "true" on exactly ONE node that should back up GlusterFS.
-# All other nodes must leave this as "false".
+# All other nodes should use "false".
 BACKUP_GLUSTER="false"
 
 # Output folder name for GlusterFS backups under BACKUP_BASE
 GLUSTER_DEST_NAME="gluster01"
 
-# Paths relative to GLUSTER_SRC to exclude from the rsync backup.
-# Example: GLUSTER_EXCLUDE_DIRS=("volume-a/tmp" "volume-b/cache")
+# GlusterFS source directory (replicated across all Swarm nodes)
+GLUSTER_SRC="/mnt/gluster01"
+
+# Paths relative to GLUSTER_SRC to exclude from rsync
+# Example: GLUSTER_EXCLUDE_DIRS=("shared/tmp" "shared/cache")
 GLUSTER_EXCLUDE_DIRS=()
-
-# Number of days to retain per-host dated backup directories.
-# Directories older than this are removed after a successful backup.
-RETENTION_DAYS=5
-
-# What to do when a dated backup directory already exists for today:
-#   "overwrite"  — continue the run, overwriting existing files
-#   "keep"       — exit without making any changes
-EXISTING_BACKUP_ACTION="overwrite"
-
-# Paths relative to DOCKER_SRC to exclude from the rsync backup.
-# Example: DOCKER_EXCLUDE_DIRS=("service-a/cache" "service-b/tmp")
-DOCKER_EXCLUDE_DIRS=()
-
-# URL to ping (via curl) on a fully successful backup run.
-# Leave empty to disable.  Example: "https://hc-ping.com/<uuid>"
-HEALTHCHECK_URL=""
 
 # =============================================================================
 # INTERNAL — Do not edit below this line unless you know what you are doing

@@ -70,15 +70,15 @@ Available variables in config files:
 | Variable | Default | Description |
 |---|---|---|
 | `BACKUP_BASE` | `/mnt/nas01backup` | Root of the NFS backup target |
-| `DOCKER_SRC` | `/srv/docker` | Docker volume source directory |
-| `GLUSTER_SRC` | `/mnt/gluster01` | GlusterFS source directory |
-| `BACKUP_GLUSTER` | `"false"` | Set to `"true"` on the one node responsible for GlusterFS |
-| `GLUSTER_DEST_NAME` | `"gluster01"` | Output folder name under `BACKUP_BASE` for GlusterFS |
-| `GLUSTER_EXCLUDE_DIRS` | `()` | Paths relative to `GLUSTER_SRC` to exclude from rsync |
 | `RETENTION_DAYS` | `5` | Days to keep per-host dated directories |
 | `EXISTING_BACKUP_ACTION` | `"overwrite"` | `"overwrite"` or `"keep"` when today's backup already exists |
-| `DOCKER_EXCLUDE_DIRS` | `()` | Paths relative to `DOCKER_SRC` to exclude from rsync |
 | `HEALTHCHECK_URL` | `""` | URL to curl on success (e.g. `https://hc-ping.com/<uuid>`) |
+| `DOCKER_SRC` | `/srv/docker` | Docker volume source directory |
+| `DOCKER_EXCLUDE_DIRS` | `()` | Paths relative to `DOCKER_SRC` to exclude from rsync |
+| `BACKUP_GLUSTER` | `"false"` | Set to `"true"` on the one node responsible for GlusterFS |
+| `GLUSTER_DEST_NAME` | `"gluster01"` | Output folder name under `BACKUP_BASE` for GlusterFS |
+| `GLUSTER_SRC` | `/mnt/gluster01` | GlusterFS source directory |
+| `GLUSTER_EXCLUDE_DIRS` | `()` | Paths relative to `GLUSTER_SRC` to exclude from rsync |
 
 ---
 

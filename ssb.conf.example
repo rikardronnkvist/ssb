@@ -4,30 +4,17 @@
 # Base directory of the (NFS-mounted) backup target
 BACKUP_BASE="/mnt/nas01backup"
 
-# Source directory containing Docker bind-mount data
-DOCKER_SRC="/srv/docker"
-
-# GlusterFS source directory (replicated across all Swarm nodes)
-GLUSTER_SRC="/mnt/gluster01"
-
-# Set to "true" on exactly ONE node that should back up GlusterFS.
-# All other nodes should use "false".
-BACKUP_GLUSTER="false"
-
-# Output folder name for GlusterFS backups under BACKUP_BASE
-GLUSTER_DEST_NAME="gluster01"
-
-# Paths relative to GLUSTER_SRC to exclude from rsync
-GLUSTER_EXCLUDE_DIRS=(
-	"shared/tmp"
-	"shared/cache"
-)
-
 # Number of days to retain per-host dated backup directories
 RETENTION_DAYS=5
 
 # What to do when today's backup directory already exists: overwrite|keep
 EXISTING_BACKUP_ACTION="overwrite"
+
+# URL to ping on fully successful backup run (empty disables)
+HEALTHCHECK_URL=""
+
+# Source directory containing Docker bind-mount data
+DOCKER_SRC="/srv/docker"
 
 # Paths relative to DOCKER_SRC to exclude from rsync
 DOCKER_EXCLUDE_DIRS=(
@@ -36,5 +23,18 @@ DOCKER_EXCLUDE_DIRS=(
 	"service-a/tmp"
 )
 
-# URL to ping on fully successful backup run (empty disables)
-HEALTHCHECK_URL=""
+# Set to "true" on exactly ONE node that should back up GlusterFS.
+# All other nodes should use "false".
+BACKUP_GLUSTER="false"
+
+# Output folder name for GlusterFS backups under BACKUP_BASE
+GLUSTER_DEST_NAME="gluster01"
+
+# GlusterFS source directory (replicated across all Swarm nodes)
+GLUSTER_SRC="/mnt/gluster01"
+
+# Paths relative to GLUSTER_SRC to exclude from rsync
+GLUSTER_EXCLUDE_DIRS=(
+	"shared/tmp"
+	"shared/cache"
+)
