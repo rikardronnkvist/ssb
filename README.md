@@ -74,6 +74,7 @@ Available variables in config files:
 | `GLUSTER_SRC` | `/mnt/gluster01` | GlusterFS source directory |
 | `BACKUP_GLUSTER` | `"false"` | Set to `"true"` on the one node responsible for GlusterFS |
 | `GLUSTER_DEST_NAME` | `"gluster01"` | Output folder name under `BACKUP_BASE` for GlusterFS |
+| `GLUSTER_EXCLUDE_DIRS` | `()` | Paths relative to `GLUSTER_SRC` to exclude from rsync |
 | `RETENTION_DAYS` | `5` | Days to keep per-host dated directories |
 | `EXISTING_BACKUP_ACTION` | `"overwrite"` | `"overwrite"` or `"keep"` when today's backup already exists |
 | `DOCKER_EXCLUDE_DIRS` | `()` | Paths relative to `DOCKER_SRC` to exclude from rsync |

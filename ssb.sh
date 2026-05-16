@@ -31,6 +31,10 @@ BACKUP_GLUSTER="false"
 # Output folder name for GlusterFS backups under BACKUP_BASE
 GLUSTER_DEST_NAME="gluster01"
 
+# Paths relative to GLUSTER_SRC to exclude from the rsync backup.
+# Example: GLUSTER_EXCLUDE_DIRS=("volume-a/tmp" "volume-b/cache")
+GLUSTER_EXCLUDE_DIRS=()
+
 # Number of days to retain per-host dated backup directories.
 # Directories older than this are removed after a successful backup.
 RETENTION_DAYS=5
@@ -622,15 +626,22 @@ backup_gluster() {
 
     log_info "Backing up GlusterFS: ${GLUSTER_SRC} → ${GLUSTER_BACKUP_DIR}"
 
+    local -a exclude_args=()
+    local excl
+    for excl in "${GLUSTER_EXCLUDE_DIRS[@]}"; do
+        exclude_args+=("--exclude=${excl}")
+    done
+
     if [[ "${DRY_RUN}" == "true" ]]; then
         log_info "[DRY-RUN] Would create: ${GLUSTER_BACKUP_DIR}"
-        log_info "[DRY-RUN] Would run: rsync -av --delete ${GLUSTER_SRC}/ ${GLUSTER_BACKUP_DIR}/"
+        log_info "[DRY-RUN] Would run: rsync -av --delete ${exclude_args[*]+"${exclude_args[*]}"} ${GLUSTER_SRC}/ ${GLUSTER_BACKUP_DIR}/"
         return 0
     fi
 
     mkdir -p "${GLUSTER_BACKUP_DIR}"
 
     if ! rsync -av --delete \
+            ${exclude_args[@]+"${exclude_args[@]}"} \
             "${GLUSTER_SRC}/" "${GLUSTER_BACKUP_DIR}/" \
             2>&1 | tee -a "${LOG_FILE}"; then
         log_error "rsync of GlusterFS failed"

@@ -17,6 +17,12 @@ BACKUP_GLUSTER="false"
 # Output folder name for GlusterFS backups under BACKUP_BASE
 GLUSTER_DEST_NAME="gluster01"
 
+# Paths relative to GLUSTER_SRC to exclude from rsync
+GLUSTER_EXCLUDE_DIRS=(
+	"shared/tmp"
+	"shared/cache"
+)
+
 # Number of days to retain per-host dated backup directories
 RETENTION_DAYS=5
 
