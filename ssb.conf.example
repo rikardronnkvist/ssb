@@ -4,7 +4,8 @@
 # Base directory of the (NFS-mounted) backup target
 BACKUP_BASE="/mnt/nas01backup"
 
-# Number of days to retain per-host dated backup directories
+# Number of days to retain per-host dated backup directories and GlusterFS backup directories.
+# Per-host retention runs on every node. GlusterFS retention runs only on the node with BACKUP_GLUSTER="true".
 RETENTION_DAYS=5
 
 # What to do when today's backup directory already exists: overwrite|keep
@@ -23,7 +24,7 @@ DOCKER_EXCLUDE_DIRS=(
 	"service-a/tmp"
 )
 
-# Set to "true" on exactly ONE node that should back up GlusterFS.
+# Set to "true" on exactly ONE node that should back up GlusterFS and perform GlusterFS retention cleanup.
 # All other nodes should use "false".
 BACKUP_GLUSTER="false"
 

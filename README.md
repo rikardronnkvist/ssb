@@ -15,6 +15,7 @@ on every node via cron — no central scheduler, no shared state.
 - **Label-driven** — opt containers in with a single Docker label
 - **GlusterFS backup** — optional, enabled on exactly one node
 - **Retention** — automatically removes dated backup directories older than N days
+  - (per-host) and GlusterFS backup directories older than N days (only on the designated GlusterFS node)
 - **Lock file** — prevents overlapping cron runs; detects and recovers stale locks
 - **Healthcheck** — sends a curl ping on fully successful completion
 - **Dry-run mode** — shows what would happen without writing any files
@@ -223,3 +224,14 @@ writing files, running dumps, or deleting old backups.
 - `rsync`
 - `curl` (only if `HEALTHCHECK_URL` is set)
 - NFS (or equivalent) mount available at `BACKUP_BASE`
+
+---
+
+### Retention Policy
+
+Retention applies to both per-host backup directories (`${BACKUP_BASE}/<hostname>`) and GlusterFS backup directories (`${BACKUP_BASE}/<GLUSTER_DEST_NAME>`). Old dated directories older than `RETENTION_DAYS` are automatically removed:
+
+- Per-host retention runs on every node.
+- GlusterFS retention runs **only** on the node where `BACKUP_GLUSTER="true"`.
+
+This ensures that both regular and GlusterFS backups are cleaned up according to your retention policy, but only one node manages GlusterFS cleanup to avoid race conditions.
