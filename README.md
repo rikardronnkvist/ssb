@@ -29,8 +29,10 @@ on every node via cron — no central scheduler, no shared state.
 sudo cp ssb.sh /usr/local/sbin/ssb.sh
 sudo chmod +x /usr/local/sbin/ssb.sh
 
-# 2. Edit the CONFIGURATION block at the top of the script
-sudo nano /usr/local/sbin/ssb.sh
+# 2. Create a local config file next to the script
+cd /usr/local/sbin
+sudo cp ssb.conf.example ssb.conf
+sudo nano ssb.conf
 
 # 3. Test with --dry-run
 /usr/local/sbin/ssb.sh --dry-run
@@ -44,7 +46,26 @@ echo "0 2 * * * /usr/local/sbin/ssb.sh >> /var/log/ssb.log 2>&1" \
 
 ## Configuration
 
-All configurable values live at the top of `ssb.sh`.
+`ssb.sh` loads configuration from a file in the same directory as the script.
+
+- Default config file: `ssb.conf`
+- Optional per-server configs: `ssb.<server>.conf`
+- Select a specific config with `--config <filename>`
+
+Local config files are ignored by git via `.gitignore`, so they are not
+affected by pull/push.
+
+### Example
+
+```bash
+# Uses ./ssb.conf (if present)
+./ssb.sh --dry-run
+
+# Uses ./ssb.docker01.conf
+./ssb.sh --config ssb.docker01.conf --dry-run
+```
+
+Available variables in config files:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -70,9 +91,14 @@ database backups.
 | `ssb.backup-db` | `mysql` or `mariadb` | Dump MySQL / MariaDB databases |
 | `ssb.backup-db` | `postgresql` or `postgres` | Dump PostgreSQL databases |
 | `ssb.backup-db-names` | `db1,db2` | Specific databases to dump (optional) |
+| `ssb.backup-db-username` | `ENV_VAR_NAME` | Env var name inside container for DB username (optional override) |
+| `ssb.backup-db-password` | `ENV_VAR_NAME` | Env var name inside container for DB password (optional override) |
 
 Without `ssb.backup-db-names` the script performs a full dump of all databases
 (`--all-databases` for MySQL; `pg_dumpall` for PostgreSQL).
+
+The `ssb.backup-db-username` and `ssb.backup-db-password` labels apply to both
+MySQL/MariaDB and PostgreSQL containers.
 
 ### Compose / Stack example
 
@@ -84,6 +110,8 @@ services:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
     labels:
       ssb.backup-db: "mysql"
+      ssb.backup-db-username: "MYSQL_ROOT_USER"
+      ssb.backup-db-password: "MYSQL_ROOT_PASSWORD"
       # ssb.backup-db-names: "app_db"   # optional
     secrets:
       - db_root_password
@@ -94,6 +122,8 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
     labels:
       ssb.backup-db: "postgresql"
+      # ssb.backup-db-username: "POSTGRES_USER"
+      # ssb.backup-db-password: "POSTGRES_PASSWORD"
     secrets:
       - pg_password
 ```
@@ -107,8 +137,9 @@ services:
 The script reads credentials from the container's environment variables.
 Priority order:
 
-1. `MYSQL_ROOT_PASSWORD` / `MARIADB_ROOT_PASSWORD` → user `root`
-2. `MYSQL_PASSWORD` / `MARIADB_PASSWORD` + `MYSQL_USER` / `MARIADB_USER`
+1. `ssb.backup-db-username` / `ssb.backup-db-password` label overrides (env var names)
+2. `MYSQL_ROOT_PASSWORD` / `MARIADB_ROOT_PASSWORD` → user `root`
+3. `MYSQL_PASSWORD` / `MARIADB_PASSWORD` + `MYSQL_USER` / `MARIADB_USER`
 
 **Recommended for production:** store the password in a Docker Secret and
 reference it with `MYSQL_ROOT_PASSWORD_FILE`.  The official MariaDB/MySQL
@@ -120,6 +151,8 @@ The script reads `POSTGRES_USER` (defaults to `postgres`) and
 `POSTGRES_PASSWORD` from the container's environment.  The password is passed
 to `pg_dump` / `pg_dumpall` via the `PGPASSWORD` environment variable on
 `docker exec`.
+
+(You can override both env var names per container with container labels)
 
 **Recommended for production:** use Docker Secrets with `POSTGRES_PASSWORD_FILE`
 or configure `pg_hba.conf` for local trust/peer authentication.

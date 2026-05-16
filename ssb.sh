@@ -5,13 +5,14 @@
 # Backs up local Docker container volumes and databases on each Swarm node.
 # Designed to run from cron on each node independently; no central scheduler.
 #
-# Usage: ssb.sh [--dry-run] [--help]
+# Usage: ssb.sh [--config FILE] [--dry-run] [--help]
 # =============================================================================
 
 set -uo pipefail
 
 # =============================================================================
-# CONFIGURATION — Edit these values to match your environment
+# CONFIGURATION DEFAULTS
+# These defaults can be overridden by sourcing a config file.
 # =============================================================================
 
 # Base directory of the (NFS-mounted) backup target
@@ -51,18 +52,26 @@ HEALTHCHECK_URL=""
 # INTERNAL — Do not edit below this line unless you know what you are doing
 # =============================================================================
 
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${SCRIPT_PATH}")" && pwd)
+readonly SCRIPT_DIR
+
+DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/ssb.conf"
+CONFIG_FILE="${DEFAULT_CONFIG_FILE}"
+CONFIG_FILE_FROM_ARG="false"
+
 DATE=$(date +%Y-%m-%d)
 readonly DATE
 
 SHORT_HOSTNAME=$(hostname -s)
 readonly SHORT_HOSTNAME
 
-HOST_BACKUP_DIR="${BACKUP_BASE}/${SHORT_HOSTNAME}/${DATE}"
-LOCK_FILE="${BACKUP_BASE}/${SHORT_HOSTNAME}/backup-${DATE}.lock"
-LOG_FILE="${HOST_BACKUP_DIR}/backup.log"
-DOCKER_BACKUP_DIR="${HOST_BACKUP_DIR}/docker"
-DB_BACKUP_DIR="${HOST_BACKUP_DIR}/databases"
-GLUSTER_BACKUP_DIR="${BACKUP_BASE}/${GLUSTER_DEST_NAME}/${DATE}"
+HOST_BACKUP_DIR=""
+LOCK_FILE=""
+LOG_FILE=""
+DOCKER_BACKUP_DIR=""
+DB_BACKUP_DIR=""
+GLUSTER_BACKUP_DIR=""
 
 DRY_RUN="false"
 ERRORS=0
@@ -99,6 +108,7 @@ Usage: $(basename "$0") [OPTIONS]
 Simple Swarm Backup — backs up local Docker volumes and databases on this node.
 
 Options:
+    --config FILE  Load config FILE from the script directory (default: ssb.conf)
   --dry-run    Show what would be done without writing any files
   --help       Show this help message
 
@@ -111,17 +121,73 @@ EOF
 }
 
 parse_args() {
-    for arg in "$@"; do
-        case "${arg}" in
-            --dry-run|-n) DRY_RUN="true" ;;
-            --help|-h)    usage ;;
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --dry-run|-n)
+                DRY_RUN="true"
+                shift
+                ;;
+            --config)
+                if [[ -z "${2:-}" ]]; then
+                    echo "Missing value for --config" >&2
+                    echo "Run '$(basename "$0") --help' for usage." >&2
+                    exit 2
+                fi
+                if [[ "$2" == */* ]]; then
+                    echo "ERROR: --config must be a filename in ${SCRIPT_DIR}" >&2
+                    exit 2
+                fi
+                CONFIG_FILE="${SCRIPT_DIR}/$2"
+                CONFIG_FILE_FROM_ARG="true"
+                shift 2
+                ;;
+            --config=*)
+                local cfg_name
+                cfg_name="${1#*=}"
+                if [[ -z "${cfg_name}" ]]; then
+                    echo "Missing value for --config" >&2
+                    exit 2
+                fi
+                if [[ "${cfg_name}" == */* ]]; then
+                    echo "ERROR: --config must be a filename in ${SCRIPT_DIR}" >&2
+                    exit 2
+                fi
+                CONFIG_FILE="${SCRIPT_DIR}/${cfg_name}"
+                CONFIG_FILE_FROM_ARG="true"
+                shift
+                ;;
+            --help|-h)
+                usage
+                ;;
             *)
-                echo "Unknown argument: ${arg}" >&2
+                echo "Unknown argument: $1" >&2
                 echo "Run '$(basename "$0") --help' for usage." >&2
                 exit 2
                 ;;
         esac
     done
+}
+
+load_config() {
+    if [[ -f "${CONFIG_FILE}" ]]; then
+        # shellcheck disable=SC1090
+        source "${CONFIG_FILE}"
+        return 0
+    fi
+
+    if [[ "${CONFIG_FILE_FROM_ARG}" == "true" ]]; then
+        echo "ERROR: Config file not found: ${CONFIG_FILE}" >&2
+        exit 2
+    fi
+}
+
+set_runtime_paths() {
+    HOST_BACKUP_DIR="${BACKUP_BASE}/${SHORT_HOSTNAME}/${DATE}"
+    LOCK_FILE="${BACKUP_BASE}/${SHORT_HOSTNAME}/backup-${DATE}.lock"
+    LOG_FILE="${HOST_BACKUP_DIR}/backup.log"
+    DOCKER_BACKUP_DIR="${HOST_BACKUP_DIR}/docker"
+    DB_BACKUP_DIR="${HOST_BACKUP_DIR}/databases"
+    GLUSTER_BACKUP_DIR="${BACKUP_BASE}/${GLUSTER_DEST_NAME}/${DATE}"
 }
 
 # =============================================================================
@@ -253,8 +319,11 @@ get_container_env() {
 # MYSQL / MARIADB BACKUP
 #
 # Credential discovery order (container env vars):
-#   1. MYSQL_ROOT_PASSWORD or MARIADB_ROOT_PASSWORD  → user root
-#   2. MYSQL_PASSWORD or MARIADB_PASSWORD            → MYSQL_USER / MARIADB_USER
+#   1. Label override:
+#      - ssb.backup-db-username=<ENV_VAR_NAME>
+#      - ssb.backup-db-password=<ENV_VAR_NAME>
+#   2. MYSQL_ROOT_PASSWORD or MARIADB_ROOT_PASSWORD  → user root
+#   3. MYSQL_PASSWORD or MARIADB_PASSWORD            → MYSQL_USER / MARIADB_USER
 #
 # Recommended production approach: store passwords in Docker Secrets or a
 # dedicated ~/.my.cnf inside the container, mounted from a secret volume.
@@ -268,6 +337,10 @@ backup_mysql() {
     local dest_dir="${DB_BACKUP_DIR}/${container}"
     local db_names_label
     db_names_label=$(get_container_label "${container}" "ssb.backup-db-names")
+    local user_env_label
+    user_env_label=$(get_container_label "${container}" "ssb.backup-db-username")
+    local pass_env_label
+    pass_env_label=$(get_container_label "${container}" "ssb.backup-db-password")
 
     log_info "MySQL/MariaDB backup — container: ${container}"
 
@@ -275,23 +348,42 @@ backup_mysql() {
     local mysql_user="root"
     local mysql_pass=""
 
-    local env_var
-    for env_var in MYSQL_ROOT_PASSWORD MARIADB_ROOT_PASSWORD; do
-        mysql_pass=$(get_container_env "${container}" "${env_var}")
-        if [[ -n "${mysql_pass}" ]]; then
+    if [[ -n "${user_env_label}" ]]; then
+        mysql_user=$(get_container_env "${container}" "${user_env_label}")
+        if [[ -z "${mysql_user}" ]]; then
+            log_warn "  Label ssb.backup-db-username='${user_env_label}' is set but env var is missing/empty. Falling back to defaults."
             mysql_user="root"
-            break
         fi
-    done
+    fi
+
+    if [[ -n "${pass_env_label}" ]]; then
+        mysql_pass=$(get_container_env "${container}" "${pass_env_label}")
+        if [[ -z "${mysql_pass}" ]]; then
+            log_warn "  Label ssb.backup-db-password='${pass_env_label}' is set but env var is missing/empty. Falling back to defaults."
+        fi
+    fi
+
+    local env_var
+    if [[ -z "${mysql_pass}" ]]; then
+        for env_var in MYSQL_ROOT_PASSWORD MARIADB_ROOT_PASSWORD; do
+            mysql_pass=$(get_container_env "${container}" "${env_var}")
+            if [[ -n "${mysql_pass}" ]]; then
+                [[ -z "${user_env_label}" ]] && mysql_user="root"
+                break
+            fi
+        done
+    fi
 
     if [[ -z "${mysql_pass}" ]]; then
         for env_var in MYSQL_PASSWORD MARIADB_PASSWORD; do
             mysql_pass=$(get_container_env "${container}" "${env_var}")
             if [[ -n "${mysql_pass}" ]]; then
-                local u
-                u=$(get_container_env "${container}" "MYSQL_USER")
-                [[ -z "${u}" ]] && u=$(get_container_env "${container}" "MARIADB_USER")
-                mysql_user="${u:-root}"
+                if [[ -z "${user_env_label}" ]]; then
+                    local u
+                    u=$(get_container_env "${container}" "MYSQL_USER")
+                    [[ -z "${u}" ]] && u=$(get_container_env "${container}" "MARIADB_USER")
+                    mysql_user="${u:-root}"
+                fi
                 break
             fi
         done
@@ -349,8 +441,11 @@ backup_mysql() {
 # POSTGRESQL BACKUP
 #
 # Credential discovery (container env vars):
-#   POSTGRES_USER     — defaults to "postgres" if unset
-#   POSTGRES_PASSWORD — passed as PGPASSWORD; omitted if empty (trust/peer auth)
+#   1. Label override:
+#      - ssb.backup-db-username=<ENV_VAR_NAME>
+#      - ssb.backup-db-password=<ENV_VAR_NAME>
+#   2. POSTGRES_USER     — defaults to "postgres" if unset
+#   3. POSTGRES_PASSWORD — passed as PGPASSWORD; omitted if empty (trust/peer auth)
 #
 # Recommended production approach: use a .pgpass file or pg_hba.conf trust
 # auth for the local socket, or store passwords in Docker Secrets.
@@ -364,15 +459,35 @@ backup_postgresql() {
     local dest_dir="${DB_BACKUP_DIR}/${container}"
     local db_names_label
     db_names_label=$(get_container_label "${container}" "ssb.backup-db-names")
+    local user_env_label
+    user_env_label=$(get_container_label "${container}" "ssb.backup-db-username")
+    local pass_env_label
+    pass_env_label=$(get_container_label "${container}" "ssb.backup-db-password")
 
     log_info "PostgreSQL backup — container: ${container}"
 
     local pg_user
-    pg_user=$(get_container_env "${container}" "POSTGRES_USER")
+    if [[ -n "${user_env_label}" ]]; then
+        pg_user=$(get_container_env "${container}" "${user_env_label}")
+        if [[ -z "${pg_user}" ]]; then
+            log_warn "  Label ssb.backup-db-username='${user_env_label}' is set but env var is missing/empty. Falling back to POSTGRES_USER."
+            pg_user=$(get_container_env "${container}" "POSTGRES_USER")
+        fi
+    else
+        pg_user=$(get_container_env "${container}" "POSTGRES_USER")
+    fi
     pg_user="${pg_user:-postgres}"
 
     local pg_pass
-    pg_pass=$(get_container_env "${container}" "POSTGRES_PASSWORD")
+    if [[ -n "${pass_env_label}" ]]; then
+        pg_pass=$(get_container_env "${container}" "${pass_env_label}")
+        if [[ -z "${pg_pass}" ]]; then
+            log_warn "  Label ssb.backup-db-password='${pass_env_label}' is set but env var is missing/empty. Falling back to POSTGRES_PASSWORD."
+            pg_pass=$(get_container_env "${container}" "POSTGRES_PASSWORD")
+        fi
+    else
+        pg_pass=$(get_container_env "${container}" "POSTGRES_PASSWORD")
+    fi
 
     if [[ "${DRY_RUN}" == "true" ]]; then
         log_info "[DRY-RUN] Would pg_dump/pg_dumpall container=${container} user=${pg_user} databases=${db_names_label:-ALL (pg_dumpall)}"
@@ -582,6 +697,8 @@ send_healthcheck() {
 
 main() {
     parse_args "$@"
+    load_config
+    set_runtime_paths
 
     # Ensure the log directory exists before the first log call (non-dry-run)
     if [[ "${DRY_RUN}" != "true" ]]; then
@@ -597,6 +714,7 @@ main() {
     log_info "Host     : ${SHORT_HOSTNAME}"
     log_info "Date     : ${DATE}"
     log_info "Dry-run  : ${DRY_RUN}"
+    log_info "Config   : ${CONFIG_FILE}"
     log_info "Backup to: ${HOST_BACKUP_DIR}"
     log_info "========================================================"
 
