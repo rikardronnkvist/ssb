@@ -47,10 +47,10 @@ echo "0 2 * * * /usr/local/sbin/ssb.sh >> /var/log/ssb.log 2>&1" \
 
 ## Configuration
 
-`ssb.sh` loads configuration from a JSON file in the same directory as the script.
+`ssb.sh` loads configuration from a JSON file in the same directory as the script by default.
 
-- Default config file: `ssb.json`
-- Optional config file name via `--config <filename>`
+- Default config file: `ssb.json` (in script directory)
+- Optional config file via `--config <path>` (absolute path or relative to script directory)
 - Define multiple servers in one JSON file under `servers`
 - The script selects config by hostname (`hostname -s`; fallback to full hostname)
 
@@ -63,8 +63,11 @@ affected by pull/push.
 # Uses ./ssb.json (if present)
 ./ssb.sh --dry-run
 
-# Uses ./ssb.prod.json
+# Uses ./ssb.prod.json (relative to script directory)
 ./ssb.sh --config ssb.prod.json --dry-run
+
+# Uses /etc/ssb/config.json (absolute path)
+./ssb.sh --config /etc/ssb/config.json --dry-run
 ```
 
 ### JSON config structure

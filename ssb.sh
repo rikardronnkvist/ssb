@@ -112,7 +112,7 @@ Usage: $(basename "$0") [OPTIONS]
 Simple Swarm Backup — backs up local Docker volumes and databases on this node.
 
 Options:
-    --config FILE  Load JSON config FILE from the script directory (default: ssb.json)
+    --config FILE  Load JSON config FILE (default: ssb.json in script directory; absolute or relative path allowed)
   --dry-run    Show what would be done without writing any files
   --help       Show this help message
 
@@ -137,11 +137,12 @@ parse_args() {
                     echo "Run '$(basename "$0") --help' for usage." >&2
                     exit 2
                 fi
-                if [[ "$2" == */* ]]; then
-                    echo "ERROR: --config must be a filename in ${SCRIPT_DIR}" >&2
-                    exit 2
+                # Support absolute paths, or relative paths in script directory
+                if [[ "$2" == /* ]]; then
+                    CONFIG_FILE="$2"
+                else
+                    CONFIG_FILE="${SCRIPT_DIR}/$2"
                 fi
-                CONFIG_FILE="${SCRIPT_DIR}/$2"
                 CONFIG_FILE_FROM_ARG="true"
                 shift 2
                 ;;
@@ -152,11 +153,12 @@ parse_args() {
                     echo "Missing value for --config" >&2
                     exit 2
                 fi
-                if [[ "${cfg_name}" == */* ]]; then
-                    echo "ERROR: --config must be a filename in ${SCRIPT_DIR}" >&2
-                    exit 2
+                # Support absolute paths, or relative paths in script directory
+                if [[ "${cfg_name}" == /* ]]; then
+                    CONFIG_FILE="${cfg_name}"
+                else
+                    CONFIG_FILE="${SCRIPT_DIR}/${cfg_name}"
                 fi
-                CONFIG_FILE="${SCRIPT_DIR}/${cfg_name}"
                 CONFIG_FILE_FROM_ARG="true"
                 shift
                 ;;
