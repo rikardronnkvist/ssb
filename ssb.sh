@@ -345,7 +345,6 @@ release_lock() {
 setup_dirs() {
     if [[ "${DRY_RUN}" == "true" ]]; then
         log_info "[DRY-RUN] Would create: ${DOCKER_BACKUP_DIR}"
-        log_info "[DRY-RUN] Would create: ${DB_BACKUP_DIR}"
         return 0
     fi
 
@@ -356,7 +355,6 @@ setup_dirs() {
     fi
 
     mkdir -p "${DOCKER_BACKUP_DIR}"
-    mkdir -p "${DB_BACKUP_DIR}"
     log_info "Output directories ready: ${HOST_BACKUP_DIR}"
 }
 
