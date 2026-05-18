@@ -79,7 +79,7 @@ Usage: $(basename "$0") [OPTIONS]
 Simple Swarm Backup — backs up local Docker volumes and databases on this node.
 
 Options:
-    --config FILE  Load JSON config FILE (default: ./ssb.json)
+  --config FILE  Load JSON config FILE (default: ./ssb.json)
   --dry-run      Show what would be done without writing any files
   --help         Show this help message
 
