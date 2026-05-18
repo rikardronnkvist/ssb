@@ -667,17 +667,37 @@ backup_sqlite3() {
         return 0
     fi
 
+    if ! docker exec "${container}" sqlite3 -version >/dev/null 2>&1; then
+        log_error "  sqlite3 CLI is not available in container '${container}'"
+        return 0
+    fi
+
+    if ! docker exec "${container}" test -f "${sqlite_path}" >/dev/null 2>&1; then
+        log_error "  SQLite file not found in container '${container}': ${sqlite_path}"
+        return 0
+    fi
+
     mkdir -p "${dest_dir}"
 
     local tmp_file
     tmp_file=$(mktemp "/tmp/ssb-sqlite-${container}-${sqlite_name}-XXXXXX.sql")
     local zip_file="${dest_dir}/${sqlite_name}.sql.gz"
+    local err_file
+    err_file=$(mktemp "/tmp/ssb-sqlite-${container}-${sqlite_name}-XXXXXX.err")
 
-    if ! docker exec "${container}" sqlite3 "${sqlite_path}" .dump > "${tmp_file}"; then
+    if ! docker exec "${container}" sqlite3 -readonly -cmd '.timeout 5000' "${sqlite_path}" .dump > "${tmp_file}" 2> "${err_file}"; then
+        local err_msg
+        err_msg=$(tr '\n' ' ' < "${err_file}" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')
         rm -f "${tmp_file}"
-        log_error "  sqlite3 dump failed for '${sqlite_path}' in container '${container}'"
+        rm -f "${err_file}"
+        if [[ -n "${err_msg}" ]]; then
+            log_error "  sqlite3 dump failed for '${sqlite_path}' in container '${container}': ${err_msg}"
+        else
+            log_error "  sqlite3 dump failed for '${sqlite_path}' in container '${container}'"
+        fi
         return 0
     fi
+    rm -f "${err_file}"
 
     if gzip -c "${tmp_file}" > "${zip_file}"; then
         log_info "  Saved: ${zip_file} (gzipped)"
