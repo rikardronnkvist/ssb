@@ -635,6 +635,123 @@ backup_postgresql() {
 }
 
 # =============================================================================
+# MONGODB BACKUP
+#
+# Credential discovery (container env vars):
+#   1. Label override:
+#      - ssb.backup-db-username=<ENV_VAR_NAME>
+#      - ssb.backup-db-password=<ENV_VAR_NAME>
+#   2. MONGO_INITDB_ROOT_USERNAME / MONGO_INITDB_ROOT_PASSWORD
+#   3. MONGO_USERNAME / MONGO_PASSWORD
+#
+# Optional label:
+#   - ssb.backup-db-auth-db=<auth_db_name> (default: admin)
+#
+# Specific databases: set label  ssb.backup-db-names=db1,db2
+# Full dump (default):          omit the label
+# =============================================================================
+
+backup_mongodb() {
+    local container="$1"
+    local dest_dir="${DB_BACKUP_DIR}/${container}"
+    local db_names_label
+    db_names_label=$(get_container_label "${container}" "ssb.backup-db-names")
+    local user_env_label
+    user_env_label=$(get_container_label "${container}" "ssb.backup-db-username")
+    local pass_env_label
+    pass_env_label=$(get_container_label "${container}" "ssb.backup-db-password")
+    local auth_db_label
+    auth_db_label=$(get_container_label "${container}" "ssb.backup-db-auth-db")
+
+    log_info "MongoDB backup — container: ${container}"
+
+    local mongo_user=""
+    if [[ -n "${user_env_label}" ]]; then
+        mongo_user=$(get_container_env "${container}" "${user_env_label}")
+        if [[ -z "${mongo_user}" ]]; then
+            log_warn "  Label ssb.backup-db-username='${user_env_label}' is set but env var is missing/empty. Falling back to default Mongo env vars."
+        fi
+    fi
+    [[ -z "${mongo_user}" ]] && mongo_user=$(get_container_env "${container}" "MONGO_INITDB_ROOT_USERNAME")
+    [[ -z "${mongo_user}" ]] && mongo_user=$(get_container_env "${container}" "MONGO_USERNAME")
+
+    local mongo_pass=""
+    if [[ -n "${pass_env_label}" ]]; then
+        mongo_pass=$(get_container_env "${container}" "${pass_env_label}")
+        if [[ -z "${mongo_pass}" ]]; then
+            log_warn "  Label ssb.backup-db-password='${pass_env_label}' is set but env var is missing/empty. Falling back to default Mongo env vars."
+        fi
+    fi
+    [[ -z "${mongo_pass}" ]] && mongo_pass=$(get_container_env "${container}" "MONGO_INITDB_ROOT_PASSWORD")
+    [[ -z "${mongo_pass}" ]] && mongo_pass=$(get_container_env "${container}" "MONGO_PASSWORD")
+
+    local mongo_auth_db="${auth_db_label:-admin}"
+    local -a auth_args=()
+    if [[ -n "${mongo_user}" ]]; then
+        auth_args+=(--username "${mongo_user}")
+        if [[ -n "${mongo_pass}" ]]; then
+            auth_args+=(--password "${mongo_pass}" --authenticationDatabase "${mongo_auth_db}")
+        else
+            log_warn "  MongoDB username found but password is empty. Attempting mongodump without password."
+        fi
+    elif [[ -n "${mongo_pass}" ]]; then
+        log_warn "  MongoDB password found but username is empty. Attempting mongodump without explicit credentials."
+    fi
+
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "[DRY-RUN] Would mongodump container=${container} databases=${db_names_label:-ALL} auth_db=${mongo_auth_db}"
+        return 0
+    fi
+
+    if ! docker exec "${container}" mongodump --version >/dev/null 2>&1; then
+        log_error "  mongodump CLI is not available in container '${container}'"
+        return 0
+    fi
+
+    mkdir -p "${dest_dir}"
+
+    if [[ -n "${db_names_label}" ]]; then
+        IFS=',' read -ra databases <<< "${db_names_label}"
+        local db
+        for db in "${databases[@]}"; do
+            db="${db//[[:space:]]/}"
+            [[ -z "${db}" ]] && continue
+            log_info "  Dumping database: ${db}"
+            local tmp_file
+            tmp_file=$(mktemp "/tmp/ssb-mongo-${container}-${db}-XXXXXX.archive")
+            local zip_file="${dest_dir}/${db}.archive.gz"
+            if ! docker exec "${container}" mongodump "${auth_args[@]}" --db "${db}" --archive > "${tmp_file}"; then
+                rm -f "${tmp_file}"
+                log_error "  mongodump failed for database '${db}' in container '${container}'"
+            else
+                if gzip -c "${tmp_file}" > "${zip_file}"; then
+                    log_info "  Saved: ${zip_file} (gzipped)"
+                else
+                    log_error "  gzip failed for ${tmp_file}"
+                fi
+                rm -f "${tmp_file}"
+            fi
+        done
+    else
+        log_info "  Dumping all MongoDB databases"
+        local tmp_file
+        tmp_file=$(mktemp "/tmp/ssb-mongo-${container}-all-XXXXXX.archive")
+        local zip_file="${dest_dir}/all-databases.archive.gz"
+        if ! docker exec "${container}" mongodump "${auth_args[@]}" --archive > "${tmp_file}"; then
+            rm -f "${tmp_file}"
+            log_error "  mongodump failed for container '${container}'"
+        else
+            if gzip -c "${tmp_file}" > "${zip_file}"; then
+                log_info "  Saved: ${zip_file} (gzipped)"
+            else
+                log_error "  gzip failed for ${tmp_file}"
+            fi
+            rm -f "${tmp_file}"
+        fi
+    fi
+}
+
+# =============================================================================
 # SQLITE3 BACKUP
 #
 # Required label:
@@ -762,6 +879,9 @@ backup_databases() {
                 ;;
             postgresql|postgres)
                 backup_postgresql "${container}" || true
+                ;;
+            mongodb|mongo)
+                backup_mongodb "${container}" || true
                 ;;
             sqlite3|sqlite)
                 backup_sqlite3 "${container}" || true
