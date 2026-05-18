@@ -10,55 +10,22 @@
 
 set -uo pipefail
 
-# =============================================================================
-# CONFIGURATION DEFAULTS
-# These defaults can be overridden by values loaded from a JSON config file.
-# =============================================================================
-
-
-# Base directory of the (NFS-mounted) backup target
-BACKUP_BASE="/mnt/nas01backup"
-
-# Number of days to retain per-host dated backup directories
-RETENTION_DAYS=5
-
-# What to do when today's backup directory already exists: overwrite|keep
-EXISTING_BACKUP_ACTION="overwrite"
-
-# URL to ping on fully successful backup run (empty disables)
+BACKUP_BASE=""
+RETENTION_DAYS=""
+EXISTING_BACKUP_ACTION=""
 HEALTHCHECK_URL=""
-
-# Source directory containing Docker bind-mount data
-DOCKER_SRC="/srv/docker"
-
-# Paths relative to DOCKER_SRC to exclude from rsync
-# Example: DOCKER_EXCLUDE_DIRS=("plex/pms/Cache" "tautulli/cache" "service-a/tmp")
+DOCKER_SRC=""
 DOCKER_EXCLUDE_DIRS=()
-
-# Set to "true" on exactly ONE node that should back up GlusterFS.
-# All other nodes should use "false".
-BACKUP_GLUSTER="false"
-
-# Output folder name for GlusterFS backups under BACKUP_BASE
-GLUSTER_DEST_NAME="gluster01"
-
-# GlusterFS source directory (replicated across all Swarm nodes)
-GLUSTER_SRC="/mnt/gluster01"
-
-# Paths relative to GLUSTER_SRC to exclude from rsync
-# Example: GLUSTER_EXCLUDE_DIRS=("shared/tmp" "shared/cache")
+BACKUP_GLUSTER=""
+GLUSTER_DEST_NAME=""
+GLUSTER_SRC=""
 GLUSTER_EXCLUDE_DIRS=()
-
-# =============================================================================
-# INTERNAL — Do not edit below this line unless you know what you are doing
-# =============================================================================
 
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${SCRIPT_PATH}")" && pwd)
 readonly SCRIPT_DIR
 
-DEFAULT_CONFIG_FILE="${SCRIPT_DIR}/ssb.json"
-CONFIG_FILE="${DEFAULT_CONFIG_FILE}"
+CONFIG_FILE="./ssb.json"
 CONFIG_FILE_FROM_ARG="false"
 
 DATE=$(date +%Y-%m-%d)
@@ -112,9 +79,9 @@ Usage: $(basename "$0") [OPTIONS]
 Simple Swarm Backup — backs up local Docker volumes and databases on this node.
 
 Options:
-  --config FILE  Load JSON config FILE (default: ssb.json in script directory; absolute or relative path allowed)
-  --dry-run    Show what would be done without writing any files
-  --help       Show this help message
+    --config FILE  Load JSON config FILE (default: ./ssb.json)
+  --dry-run      Show what would be done without writing any files
+  --help         Show this help message
 
 Exit codes:
   0   All backup tasks completed successfully
@@ -137,12 +104,8 @@ parse_args() {
                     echo "Run '$(basename "$0") --help' for usage." >&2
                     exit 2
                 fi
-                # Support absolute paths, or relative paths in script directory
-                if [[ "$2" == /* ]]; then
-                    CONFIG_FILE="$2"
-                else
-                    CONFIG_FILE="${SCRIPT_DIR}/$2"
-                fi
+                # Support absolute or relative paths (relative to current directory)
+                CONFIG_FILE="$2"
                 CONFIG_FILE_FROM_ARG="true"
                 shift 2
                 ;;
@@ -153,12 +116,8 @@ parse_args() {
                     echo "Missing value for --config" >&2
                     exit 2
                 fi
-                # Support absolute paths, or relative paths in script directory
-                if [[ "${cfg_name}" == /* ]]; then
-                    CONFIG_FILE="${cfg_name}"
-                else
-                    CONFIG_FILE="${SCRIPT_DIR}/${cfg_name}"
-                fi
+                # Support absolute or relative paths (relative to current directory)
+                CONFIG_FILE="${cfg_name}"
                 CONFIG_FILE_FROM_ARG="true"
                 shift
                 ;;
@@ -172,15 +131,13 @@ parse_args() {
                 ;;
         esac
     done
+
 }
 
 load_config() {
     if [[ ! -f "${CONFIG_FILE}" ]]; then
-        if [[ "${CONFIG_FILE_FROM_ARG}" == "true" ]]; then
-            echo "ERROR: Config file not found: ${CONFIG_FILE}" >&2
-            exit 2
-        fi
-        return 0
+        echo "ERROR: Config file not found: ${CONFIG_FILE}" >&2
+        exit 2
     fi
 
     if ! command -v jq &>/dev/null; then
@@ -254,6 +211,18 @@ load_config() {
     [[ -n "${value}" ]] && GLUSTER_SRC="${value}"
 
     mapfile -t GLUSTER_EXCLUDE_DIRS < <(jq -r '(.gluster_exclude_dirs // [])[] | tostring' <<< "${server_cfg}")
+
+    local missing=0
+    local required_key
+    for required_key in BACKUP_BASE RETENTION_DAYS EXISTING_BACKUP_ACTION DOCKER_SRC BACKUP_GLUSTER GLUSTER_DEST_NAME GLUSTER_SRC; do
+        if [[ -z "${!required_key}" ]]; then
+            echo "ERROR: Missing required config value: ${required_key} in ${CONFIG_FILE}" >&2
+            missing=$((missing + 1))
+        fi
+    done
+    if [[ "${missing}" -gt 0 ]]; then
+        exit 2
+    fi
 }
 
 set_runtime_paths() {

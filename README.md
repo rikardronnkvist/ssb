@@ -28,20 +28,18 @@ on every node via cron — no central scheduler, no shared state.
 ## Quick Start
 
 ```bash
-# 1. Copy the script
-sudo cp ssb.sh /usr/local/sbin/ssb.sh
-sudo chmod +x /usr/local/sbin/ssb.sh
+# 1. Chmod the script
+sudo chmod +x ./ssb.sh
 
 # 2. Create a local JSON config file next to the script
-cd /usr/local/sbin
 sudo cp ssb.json.example ssb.json
 sudo nano ssb.json
 
-# 3. Test with --dry-run
-/usr/local/sbin/ssb.sh --dry-run
+# 3. Test with --dry-run (uses ./ssb.json by default)
+/path/to/script/ssb.sh --config /path/to/config/ssb.json --dry-run
 
 # 4. Add to root crontab (runs at 02:00 every night)
-echo "0 2 * * * /usr/local/sbin/ssb.sh >> /var/log/ssb.log 2>&1" \
+echo "0 2 * * * /path/to/script/ssb.sh --config /path/to/config/ssb.json >> /var/log/ssb.log 2>&1" \
   | sudo crontab -
 ```
 
@@ -49,10 +47,9 @@ echo "0 2 * * * /usr/local/sbin/ssb.sh >> /var/log/ssb.log 2>&1" \
 
 ## Configuration
 
-`ssb.sh` loads configuration from a JSON file in the same directory as the script by default.
+`ssb.sh` loads JSON configuration from `./ssb.json` by default.
 
-- Default config file: `ssb.json` (in script directory)
-- Optional config file via `--config <path>` (absolute path or relative to script directory)
+- Optional config file via `--config <path>` (absolute path or relative path)
 - Define multiple servers in one JSON file under `servers`
 - The script selects config by hostname (`hostname -s`; fallback to full hostname)
 
@@ -62,10 +59,10 @@ affected by pull/push.
 ### Example
 
 ```bash
-# Uses ./ssb.json (if present)
+# Uses ./ssb.json in current directory
 ./ssb.sh --dry-run
 
-# Uses ./ssb.prod.json (relative to script directory)
+# Uses ./ssb.prod.json (relative path)
 ./ssb.sh --config ssb.prod.json --dry-run
 
 # Uses /etc/ssb/config.json (absolute path)
@@ -95,6 +92,12 @@ For `docker_exclude_dirs`, values are merged: the effective list is `default.doc
   "servers": {
     "docker01": {
       "backup_gluster": true
+    },
+    "docker02": {
+      "docker_exclude_dirs": [
+        "service-x/tmp",
+        "service-y/tmp"
+      ]
     }
   }
 }
