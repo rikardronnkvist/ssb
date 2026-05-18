@@ -635,6 +635,59 @@ backup_postgresql() {
 }
 
 # =============================================================================
+# SQLITE3 BACKUP
+#
+# Required label:
+#   - ssb.backup-db-path=/path/to/database.sqlite
+#
+# The dump is created with sqlite3's .dump command and stored as:
+#   <container>/<db-name>.sql.gz
+# =============================================================================
+
+backup_sqlite3() {
+    local container="$1"
+    local dest_dir="${DB_BACKUP_DIR}/${container}"
+    local sqlite_path
+    sqlite_path=$(get_container_label "${container}" "ssb.backup-db-path")
+
+    log_info "SQLite3 backup — container: ${container}"
+
+    if [[ -z "${sqlite_path}" ]]; then
+        log_error "  Label ssb.backup-db-path is required for sqlite3 backup on container '${container}'"
+        return 0
+    fi
+
+    local sqlite_base
+    sqlite_base=$(basename "${sqlite_path}")
+    local sqlite_name="${sqlite_base%.*}"
+    [[ -z "${sqlite_name}" ]] && sqlite_name="database"
+
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "[DRY-RUN] Would sqlite3 dump container=${container} file=${sqlite_path} output=${dest_dir}/${sqlite_name}.sql.gz"
+        return 0
+    fi
+
+    mkdir -p "${dest_dir}"
+
+    local tmp_file
+    tmp_file=$(mktemp "/tmp/ssb-sqlite-${container}-${sqlite_name}-XXXXXX.sql")
+    local zip_file="${dest_dir}/${sqlite_name}.sql.gz"
+
+    if ! docker exec "${container}" sqlite3 "${sqlite_path}" .dump > "${tmp_file}"; then
+        rm -f "${tmp_file}"
+        log_error "  sqlite3 dump failed for '${sqlite_path}' in container '${container}'"
+        return 0
+    fi
+
+    if gzip -c "${tmp_file}" > "${zip_file}"; then
+        log_info "  Saved: ${zip_file} (gzipped)"
+    else
+        log_error "  gzip failed for ${tmp_file}"
+    fi
+    rm -f "${tmp_file}"
+}
+
+# =============================================================================
 # DATABASE BACKUP DISPATCHER
 # =============================================================================
 
@@ -662,6 +715,9 @@ backup_databases() {
                 ;;
             postgresql|postgres)
                 backup_postgresql "${container}" || true
+                ;;
+            sqlite3|sqlite)
+                backup_sqlite3 "${container}" || true
                 ;;
             "")
                 # No backup label — skip silently

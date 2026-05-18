@@ -12,6 +12,7 @@ on every node via cron — no central scheduler, no shared state.
 - **Database backup** — performs logical dumps inside containers via `docker exec`
   - MySQL / MariaDB (`mysqldump`)
   - PostgreSQL (`pg_dump` / `pg_dumpall`)
+  - SQLite3 (`sqlite3 .dump`)
 - **Compressed DB dumps** — dumps are written locally, gzipped, then copied to NFS
 - **Label-driven** — opt containers in with a single Docker label
 - **GlusterFS backup** — optional, enabled on exactly one node
@@ -124,6 +125,8 @@ database backups.
 |---|---|---|
 | `ssb.backup-db` | `mysql` or `mariadb` | Dump MySQL / MariaDB databases |
 | `ssb.backup-db` | `postgresql` or `postgres` | Dump PostgreSQL databases |
+| `ssb.backup-db` | `sqlite3` or `sqlite` | Dump a SQLite database file |
+| `ssb.backup-db-path` | `/path/in/container/app.db` | Path to SQLite database file inside container (required for sqlite3) |
 | `ssb.backup-db-names` | `db1,db2` | Specific databases to dump (optional) |
 | `ssb.backup-db-username` | `ENV_VAR_NAME` | Env var name inside container for DB username (optional override) |
 | `ssb.backup-db-password` | `ENV_VAR_NAME` | Env var name inside container for DB password (optional override) |
@@ -133,6 +136,9 @@ Without `ssb.backup-db-names` the script performs a full dump of all databases
 
 The `ssb.backup-db-username` and `ssb.backup-db-password` labels apply to both
 MySQL/MariaDB and PostgreSQL containers.
+
+For SQLite containers, set `ssb.backup-db-path` to the database file inside the
+container.
 
 ### Compose / Stack example
 
@@ -160,6 +166,12 @@ services:
       # ssb.backup-db-password: "POSTGRES_PASSWORD"
     secrets:
       - pg_password
+
+  app-with-sqlite:
+    image: your-app:latest
+    labels:
+      ssb.backup-db: "sqlite3"
+      ssb.backup-db-path: "/data/app.db"
 ```
 
 ---
@@ -191,6 +203,16 @@ to `pg_dump` / `pg_dumpall` via the `PGPASSWORD` environment variable on
 **Recommended for production:** use Docker Secrets with `POSTGRES_PASSWORD_FILE`
 or configure `pg_hba.conf` for local trust/peer authentication.
 
+### SQLite3
+
+For SQLite backups, set:
+
+- `ssb.backup-db=sqlite3` (or `sqlite`)
+- `ssb.backup-db-path=/path/to/database.sqlite` (inside the container)
+
+The script runs `sqlite3 <path> .dump` via `docker exec`, then compresses the
+result to `.sql.gz`.
+
 ---
 
 ## Output Structure
@@ -210,6 +232,7 @@ or configure `pg_hba.conf` for local trust/peer authentication.
           all-databases.sql.gz← MySQL: all-databases dump (gzipped)
           pg_dumpall.sql.gz   ← PostgreSQL: full cluster dump (gzipped)
           mydb.dump.gz        ← PostgreSQL: single database (custom format, gzipped)
+          app.sql.gz          ← SQLite3: sqlite3 .dump output (gzipped)
     backup-YYYY-MM-DD.lock    ← Present only while the script is running
 
   gluster01/                  ← GlusterFS (written by the designated node only)
@@ -257,6 +280,7 @@ writing files, running dumps, or deleting old backups.
 - `curl` (only if `HEALTHCHECK_URL` is set)
 - `jq` (for JSON config parsing)
 - `gzip` (for compressed database backup files)
+- `sqlite3` CLI in SQLite containers (only if using `ssb.backup-db=sqlite3`)
 - NFS (or equivalent) mount available at `BACKUP_BASE`
 
 ---
