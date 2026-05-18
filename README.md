@@ -213,6 +213,10 @@ For SQLite backups, set:
 The script runs `sqlite3 <path> .dump` via `docker exec`, then compresses the
 result to `.sql.gz`.
 
+If `sqlite3` is not available inside the container, SSB falls back to copying
+the SQLite file to the host with `docker cp` and runs host `sqlite3` for the
+dump.
+
 ---
 
 ## Output Structure
@@ -280,7 +284,7 @@ writing files, running dumps, or deleting old backups.
 - `curl` (only if `HEALTHCHECK_URL` is set)
 - `jq` (for JSON config parsing)
 - `gzip` (for compressed database backup files)
-- `sqlite3` CLI in SQLite containers (only if using `ssb.backup-db=sqlite3`)
+- `sqlite3` CLI in SQLite containers, or on the host for fallback (only if using `ssb.backup-db=sqlite3`)
 - NFS (or equivalent) mount available at `BACKUP_BASE`
 
 ---
