@@ -855,32 +855,22 @@ backup_databases() {
 # =============================================================================
 
 backup_docker_files() {
-    if [[ ! -d "${DOCKER_SRC}" ]]; then
-        log_warn "Docker source '${DOCKER_SRC}' not found — skipping file backup."
-        return 0
-    fi
+    local src="$1"
+    local dest="$2"
 
-    log_info "Backing up Docker files: ${DOCKER_SRC} → ${DOCKER_BACKUP_DIR}"
+    log_info "Backing up Docker files: ${src} → ${dest}"
 
-    local -a exclude_args=()
-    local excl
-    for excl in "${DOCKER_EXCLUDE_DIRS[@]}"; do
-        exclude_args+=("--exclude=${excl}")
+    local exclude_args=()
+    for exclude in "${DOCKER_EXCLUDE_DIRS[@]}"; do
+        exclude_args+=("--exclude=${exclude}")
     done
 
     if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would run: rsync -av --delete ${exclude_args[*]+"${exclude_args[*]}"} ${DOCKER_SRC}/ ${DOCKER_BACKUP_DIR}/"
+        log_info "[DRY-RUN] Would rsync ${src} to ${dest} with exclusions: ${exclude_args[*]}"
         return 0
     fi
 
-    if ! rsync -av --delete \
-            ${exclude_args[@]+"${exclude_args[@]}"} \
-            "${DOCKER_SRC}/" "${DOCKER_BACKUP_DIR}/" \
-            2>&1 | tee -a "${LOG_FILE}"; then
-        log_error "rsync of Docker files failed"
-    else
-        log_info "Docker file backup complete."
-    fi
+    rsync -av --delete "${exclude_args[@]}" "${src}/" "${dest}/"
 }
 
 # =============================================================================
