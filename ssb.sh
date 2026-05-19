@@ -951,12 +951,12 @@ cleanup_old_backups() {
         || cutoff_date=$(date -v "-${RETENTION_DAYS}d" +%Y-%m-%d 2>/dev/null) \
         || { log_warn "Could not compute retention cutoff — skipping cleanup."; return 0; }
 
-    log_info "Retention: removing per-host backups before ${cutoff_date} (>"${RETENTION_DAYS}" days) in ${host_root}"
+    log_info "Retention: removing per-host backups on or before ${cutoff_date} (>="${RETENTION_DAYS}" days) in ${host_root}"
     local found=0
     local dir dir_date
     while IFS= read -r dir; do
         dir_date=$(basename "${dir}")
-        if [[ "${dir_date}" < "${cutoff_date}" ]]; then
+        if [[ "${dir_date}" < "${cutoff_date}" || "${dir_date}" == "${cutoff_date}" ]]; then
             found=$((found + 1))
             if [[ "${DRY_RUN}" == "true" ]]; then
                 log_info "[DRY-RUN] Would remove: ${dir}"
@@ -971,11 +971,11 @@ cleanup_old_backups() {
     # GlusterFS backup retention (only on designated node)
     if [[ "${BACKUP_GLUSTER}" == "true" ]]; then
         local gluster_root="${BACKUP_BASE}/${GLUSTER_DEST_NAME}"
-        log_info "Retention: removing GlusterFS backups before ${cutoff_date} (>"${RETENTION_DAYS}" days) in ${gluster_root}"
+        log_info "Retention: removing GlusterFS backups on or before ${cutoff_date} (>="${RETENTION_DAYS}" days) in ${gluster_root}"
         local gfound=0
         while IFS= read -r dir; do
             dir_date=$(basename "${dir}")
-            if [[ "${dir_date}" < "${cutoff_date}" ]]; then
+            if [[ "${dir_date}" < "${cutoff_date}" || "${dir_date}" == "${cutoff_date}" ]]; then
                 gfound=$((gfound + 1))
                 if [[ "${DRY_RUN}" == "true" ]]; then
                     log_info "[DRY-RUN] Would remove: ${dir}"
