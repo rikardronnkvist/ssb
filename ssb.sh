@@ -157,6 +157,8 @@ load_config() {
         '(.default // {}) + ((.servers // {})[$short] // (.servers // {})[$full] // {})' \
         "${CONFIG_FILE}")
 
+    log_info "Raw server configuration: ${server_cfg}"
+
     local value
 
     value=$(jq -r 'if has("backup_base") then .backup_base else empty end' <<< "${server_cfg}")
