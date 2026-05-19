@@ -1002,11 +1002,12 @@ main() {
 
     log_info "========================================================"
     log_info "SSB — Simple Swarm Backup"
-    log_info "Host     : ${SHORT_HOSTNAME}"
-    log_info "Date     : ${DATE}"
-    log_info "Dry-run  : ${DRY_RUN}"
-    log_info "Config   : ${CONFIG_FILE}"
-    log_info "Backup to: ${HOST_BACKUP_DIR}"
+    log_info "Host      : ${SHORT_HOSTNAME}"
+    log_info "Date      : ${DATE}"
+    log_info "Dry-run   : ${DRY_RUN}"
+    log_info "Config    : ${CONFIG_FILE}"
+    log_info "Backup to : ${HOST_BACKUP_DIR}"
+    log_info "Exclusions: ${DOCKER_EXCLUDE_DIRS[*]}"
     log_info "========================================================"
 
     check_prerequisites
