@@ -175,22 +175,7 @@ load_config() {
     [[ -n "${value}" ]] && DOCKER_SRC="${value}"
 
         mapfile -t DOCKER_EXCLUDE_DIRS < <(
-                jq -r \
-                        --arg short "${SHORT_HOSTNAME}" \
-                        --arg full "${FULL_HOSTNAME}" \
-                        '
-                        def as_array: if type == "array" then . else [] end;
-                        (
-                            ((.default // {}).docker_exclude_dirs // []) | as_array
-                        )
-                        +
-                        (
-                            ((((.servers // {})[$short] // (.servers // {})[$full] // {}).docker_exclude_dirs) // []) | as_array
-                        )
-                        | .[]
-                        | tostring
-                        ' \
-                        "${CONFIG_FILE}"
+                jq -r '(.exclude // [])[] | tostring' "${CONFIG_FILE}"
         )
 
     value=$(jq -r 'if has("backup_gluster") then .backup_gluster|tostring else empty end' <<< "${server_cfg}")

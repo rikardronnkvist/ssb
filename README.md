@@ -118,6 +118,22 @@ Available variables in JSON config (`default` and server overrides):
 | `gluster_src` | `/mnt/gluster01` | GlusterFS source directory |
 | `gluster_exclude_dirs` | `[]` | Paths relative to `gluster_src` to exclude from rsync |
 
+### Configuration
+
+The `ssb.json` configuration file supports the following parameters:
+
+- `exclude`: A list of unwanted files and folders to exclude from backups. Default values include:
+  - `@eaDir`
+  - `.DS_Store`
+  - `.DS_Store@SynoResource`
+  - `Thumbs.db`
+  - `desktop.ini`
+  - `._*`
+  - `Icon\r`
+  - `__MACOSX`
+
+Ensure that the `exclude` parameter is properly defined in your `ssb.json` file to avoid backing up unnecessary files.
+
 ---
 
 ## Container Labels

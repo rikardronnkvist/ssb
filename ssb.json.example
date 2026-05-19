@@ -16,6 +16,16 @@
     "gluster_exclude_dirs": [
       "shared/tmp",
       "shared/cache"
+    ],
+    "exclude": [
+      "@eaDir",
+      ".DS_Store",
+      ".DS_Store@SynoResource",
+      "Thumbs.db",
+      "desktop.ini",
+      "._*",
+      "Icon\r",
+      "__MACOSX"
     ]
   },
   "servers": {
