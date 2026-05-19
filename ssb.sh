@@ -175,7 +175,7 @@ load_config() {
     [[ -n "${value}" ]] && DOCKER_SRC="${value}"
 
         mapfile -t DOCKER_EXCLUDE_DIRS < <(
-                jq -r '(.exclude // [])[] | tostring' "${CONFIG_FILE}"
+                jq -r '(.docker_exclude_dirs // [])[] | tostring' "${CONFIG_FILE}"
         )
 
     value=$(jq -r 'if has("backup_gluster") then .backup_gluster|tostring else empty end' <<< "${server_cfg}")
