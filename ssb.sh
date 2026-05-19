@@ -1016,7 +1016,7 @@ main() {
     trap 'release_lock' EXIT
 
     setup_dirs
-    backup_docker_files
+    backup_docker_files "${DOCKER_SRC}" "${DOCKER_BACKUP_DIR}"
     backup_databases
     backup_gluster
     cleanup_old_backups
