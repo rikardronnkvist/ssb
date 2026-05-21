@@ -1022,7 +1022,7 @@ send_healthcheck() {
     fi
 
     if [[ -n "${keyword}" ]]; then
-        log_info "Sending healthcheck ping (${state}) to ${target_url} with keyword in body"
+        log_info "Sending healthcheck ping (${state}) to ${target_url} with keyword ${keyword} in body"
         if ! curl -fsS --max-time 10 \
             -X POST \
             -H 'Content-Type: text/plain' \
