@@ -4,6 +4,9 @@
     "retention_days": 5,
     "existing_backup_action": "overwrite",
     "healthcheck_url": "",
+    "healthcheck_url_start_keyword": "",
+    "healthcheck_url_success_keyword": "",
+    "healthcheck_url_failure_keyword": "",
     "docker_src": "/srv/docker",
     "docker_exclude_dirs": [
       "plex/pms/Cache",

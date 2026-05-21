@@ -14,6 +14,9 @@ BACKUP_BASE=""
 RETENTION_DAYS=""
 EXISTING_BACKUP_ACTION=""
 HEALTHCHECK_URL=""
+HEALTHCHECK_URL_START_KEYWORD=""
+HEALTHCHECK_URL_SUCCESS_KEYWORD=""
+HEALTHCHECK_URL_FAILURE_KEYWORD=""
 DOCKER_SRC=""
 DOCKER_EXCLUDE_DIRS=()
 BACKUP_GLUSTER=""
@@ -170,6 +173,15 @@ load_config() {
 
     value=$(jq -r 'if has("healthcheck_url") then .healthcheck_url else empty end' <<< "${server_cfg}")
     [[ -n "${value}" ]] && HEALTHCHECK_URL="${value}"
+
+    value=$(jq -r 'if has("healthcheck_url_start_keyword") then .healthcheck_url_start_keyword else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && HEALTHCHECK_URL_START_KEYWORD="${value}"
+
+    value=$(jq -r 'if has("healthcheck_url_success_keyword") then .healthcheck_url_success_keyword else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && HEALTHCHECK_URL_SUCCESS_KEYWORD="${value}"
+
+    value=$(jq -r 'if has("healthcheck_url_failure_keyword") then .healthcheck_url_failure_keyword else empty end' <<< "${server_cfg}")
+    [[ -n "${value}" ]] && HEALTHCHECK_URL_FAILURE_KEYWORD="${value}"
 
     value=$(jq -r 'if has("docker_src") then .docker_src else empty end' <<< "${server_cfg}")
     [[ -n "${value}" ]] && DOCKER_SRC="${value}"
@@ -969,16 +981,46 @@ cleanup_old_backups() {
 # =============================================================================
 
 send_healthcheck() {
+    local state="$1"
     [[ -z "${HEALTHCHECK_URL}" ]] && return 0
 
+    local keyword=""
+    case "${state}" in
+        start)
+            keyword="${HEALTHCHECK_URL_START_KEYWORD}"
+            ;;
+        success)
+            keyword="${HEALTHCHECK_URL_SUCCESS_KEYWORD}"
+            ;;
+        failure)
+            keyword="${HEALTHCHECK_URL_FAILURE_KEYWORD}"
+            ;;
+        *)
+            log_warn "Unknown healthcheck state '${state}' — skipping ping."
+            return 0
+            ;;
+    esac
+
+    # Backward compatibility: success pings base URL when no success keyword is configured.
+    if [[ -z "${keyword}" ]]; then
+        if [[ "${state}" == "success" ]]; then
+            keyword=""
+        else
+            return 0
+        fi
+    fi
+
+    local target_url="${HEALTHCHECK_URL%/}"
+    [[ -n "${keyword}" ]] && target_url="${target_url}/${keyword}"
+
     if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would send healthcheck ping to: ${HEALTHCHECK_URL}"
+        log_info "[DRY-RUN] Would send healthcheck ping (${state}) to: ${target_url}"
         return 0
     fi
 
-    log_info "Sending healthcheck ping: ${HEALTHCHECK_URL}"
-    if ! curl -fsS --max-time 10 "${HEALTHCHECK_URL}" > /dev/null 2>&1; then
-        log_warn "Healthcheck ping failed (non-fatal)."
+    log_info "Sending healthcheck ping (${state}): ${target_url}"
+    if ! curl -fsS --max-time 10 "${target_url}" > /dev/null 2>&1; then
+        log_warn "Healthcheck ping failed for state '${state}' (non-fatal)."
     fi
 }
 
@@ -1016,6 +1058,8 @@ main() {
     # Always release the lock on exit (normal or abnormal)
     trap 'release_lock' EXIT
 
+    send_healthcheck "start"
+
     setup_dirs
     backup_docker_files "${DOCKER_SRC}" "${DOCKER_BACKUP_DIR}"
     backup_databases
@@ -1024,11 +1068,12 @@ main() {
 
     if [[ "${ERRORS}" -gt 0 ]]; then
         log_error "Backup finished with ${ERRORS} error(s) — review ${LOG_FILE}"
+        send_healthcheck "failure"
         exit 1
     fi
 
     log_info "Backup completed successfully with no errors."
-    send_healthcheck
+    send_healthcheck "success"
     exit 0
 }
 
