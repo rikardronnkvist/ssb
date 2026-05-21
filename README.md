@@ -111,9 +111,9 @@ Available variables in JSON config (`default` and server overrides):
 | `retention_days` | `5` | Days to keep per-host and GlusterFS dated directories |
 | `existing_backup_action` | `"overwrite"` | `"overwrite"` or `"keep"` when today's backup already exists |
 | `healthcheck_url` | `""` | Base URL for healthcheck pings (e.g. `https://hc-ping.com/<uuid>`) |
-| `healthcheck_url_start_keyword` | `""` | Optional keyword appended as `/keyword` for start pings; if empty, no start ping is sent |
-| `healthcheck_url_success_keyword` | `""` | Optional keyword appended as `/keyword` for success pings; if empty, success pings use the base `healthcheck_url` |
-| `healthcheck_url_failure_keyword` | `""` | Optional keyword appended as `/keyword` for failure pings; if empty, no failure ping is sent |
+| `healthcheck_url_start_keyword` | `""` | Optional keyword sent in request body for start pings; if empty, no start ping is sent |
+| `healthcheck_url_success_keyword` | `""` | Optional keyword sent in request body for success pings; if empty, success pings use base `healthcheck_url` with no body |
+| `healthcheck_url_failure_keyword` | `""` | Optional keyword sent in request body for failure pings; if empty, no failure ping is sent |
 | `docker_src` | `/srv/docker` | Docker volume source directory |
 | `docker_exclude_dirs` | `[]` | Paths relative to `docker_src` to exclude from rsync (merged: default + server list) |
 | `backup_gluster` | `false` | Set to `true` on the one node responsible for GlusterFS |
@@ -142,7 +142,7 @@ Healthcheck behavior:
 - Success: always sends a ping when `healthcheck_url` is set (backward compatible).
 - Start: sends a ping only when `healthcheck_url_start_keyword` is configured.
 - Failure: sends a ping only when `healthcheck_url_failure_keyword` is configured.
-- For keyword-based pings, the script calls `healthcheck_url/keyword`.
+- For keyword-based pings, the script calls `healthcheck_url` and sends the keyword in the request body.
 
 ---
 

@@ -1011,10 +1011,25 @@ send_healthcheck() {
     fi
 
     local target_url="${HEALTHCHECK_URL%/}"
-    [[ -n "${keyword}" ]] && target_url="${target_url}/${keyword}"
 
     if [[ "${DRY_RUN}" == "true" ]]; then
-        log_info "[DRY-RUN] Would send healthcheck ping (${state}) to: ${target_url}"
+        if [[ -n "${keyword}" ]]; then
+            log_info "[DRY-RUN] Would send healthcheck ping (${state}) to: ${target_url} with body: ${keyword}"
+        else
+            log_info "[DRY-RUN] Would send healthcheck ping (${state}) to: ${target_url}"
+        fi
+        return 0
+    fi
+
+    if [[ -n "${keyword}" ]]; then
+        log_info "Sending healthcheck ping (${state}) to ${target_url} with keyword in body"
+        if ! curl -fsS --max-time 10 \
+            -X POST \
+            -H 'Content-Type: text/plain' \
+            --data-raw "${keyword}" \
+            "${target_url}" > /dev/null 2>&1; then
+            log_warn "Healthcheck ping failed for state '${state}' (non-fatal)."
+        fi
         return 0
     fi
 
