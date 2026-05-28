@@ -1028,14 +1028,26 @@ send_healthcheck() {
             -H 'Content-Type: text/plain' \
             --data-raw "${keyword}" \
             "${target_url}" > /dev/null 2>&1; then
-            log_warn "Healthcheck ping failed for state '${state}' (non-fatal)."
+            log_warn "Healthcheck ping failed for state '${state}' (non-fatal). Retrying in 5 seconds..."
+            sleep 5
+            if ! curl -fsS --max-time 10 \
+                -X POST \
+                -H 'Content-Type: text/plain' \
+                --data-raw "${keyword}" \
+                "${target_url}" > /dev/null 2>&1; then
+                log_warn "Healthcheck ping failed again for state '${state}' after retry (non-fatal)."
+            fi
         fi
         return 0
     fi
 
     log_info "Sending healthcheck ping (${state}): ${target_url}"
     if ! curl -fsS --max-time 10 "${target_url}" > /dev/null 2>&1; then
-        log_warn "Healthcheck ping failed for state '${state}' (non-fatal)."
+        log_warn "Healthcheck ping failed for state '${state}' (non-fatal). Retrying in 5 seconds..."
+        sleep 5
+        if ! curl -fsS --max-time 10 "${target_url}" > /dev/null 2>&1; then
+            log_warn "Healthcheck ping failed again for state '${state}' after retry (non-fatal)."
+        fi
     fi
 }
 
